@@ -30,20 +30,40 @@ export const useSkyStore = defineStore('sky', () => {
     return STARS.filter(s => s.name.toLowerCase().includes(q)).slice(0, 5)
   })
 
-  function projectStar(ra: number, dec: number, cx: number, cy: number, scale: number): [number, number] {
+  /**
+   * 赤道坐标 -> 地平坐标（高度角/方位角，弧度）。
+   * 星点投影与地平线都必须走这一份换算，避免两处对不上。
+   */
+  function projectAltAz(ra: number, dec: number): { alt: number; az: number } {
     const ha = (localSiderealTime.value - ra) * 15 * Math.PI / 180
     const decRad = dec * Math.PI / 180
     const latRad = latitude.value * Math.PI / 180
 
     const alt = Math.asin(Math.sin(decRad) * Math.sin(latRad) + Math.cos(decRad) * Math.cos(latRad) * Math.cos(ha))
     const az = Math.atan2(-Math.cos(decRad) * Math.sin(ha), Math.sin(decRad) * Math.cos(latRad) - Math.cos(decRad) * Math.sin(latRad) * Math.cos(ha))
+    return { alt, az }
+  }
 
-    if (alt < -0.1) return [-999, -999] // below horizon
-
+  /**
+   * 地平坐标 -> 画布坐标（CSS 像素）。
+   * 星点与地平线共用：传入的坐标全部经过同一套中心、平移与比例尺换算。
+   */
+  function projectAltAzToXY(
+    alt: number, az: number,
+    cx: number, cy: number, scale: number,
+  ): [number, number] {
     const r = (Math.PI / 2 - alt) * scale * 0.45
     const x = cx + panX.value + r * Math.sin(az)
     const y = cy + panY.value - r * Math.cos(az)
     return [x, y]
+  }
+
+  function projectStar(ra: number, dec: number, cx: number, cy: number, scale: number): [number, number] {
+    const { alt, az } = projectAltAz(ra, dec)
+
+    if (alt < -0.1) return [-999, -999] // below horizon
+
+    return projectAltAzToXY(alt, az, cx, cy, scale)
   }
 
   function starRadius(mag: number): number {
@@ -72,7 +92,7 @@ export const useSkyStore = defineStore('sky', () => {
   return {
     viewDate, zoom, panX, panY, showLabels, showConstLines, showGrid,
     selectedStar, searchQuery, latitude, localSiderealTime, filteredStars,
-    projectStar, starRadius, spectralColor, selectStar,
+    projectStar, projectAltAz, projectAltAzToXY, starRadius, spectralColor, selectStar,
     STARS, CONSTELLATIONS
   }
 })
